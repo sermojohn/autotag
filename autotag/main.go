@@ -13,6 +13,7 @@ import (
 // Options holds the CLI args
 type Options struct {
 	JustVersion         bool   `short:"n" description:"Just output the next version, don't autotag"`
+	CurrentVersion      bool   `short:"c" description:"Just output the current version, don't autotag"`
 	Verbose             bool   `short:"v" description:"Enable verbose logging"`
 	Branch              string `short:"b" long:"branch" description:"Git branch to scan (defaults to main, then master)" default:""`
 	RepoPath            string `short:"r" long:"repo" description:"Path to the repo" default:"./" `
@@ -21,6 +22,7 @@ type Options struct {
 	BuildMetadata       string `short:"m" long:"build-metadata" description:"optional SemVer build metadata to append to the version with '+' character"`
 	Scheme              string `short:"s" long:"scheme" description:"The commit message scheme to use (can be: autotag|conventional)" default:"autotag"`
 	NoVersionPrefix     bool   `short:"e" long:"empty-version-prefix" description:"Do not prepend v to version tag"`
+	Subdirectory        string `short:"d" long:"subdirectory" description:"Provide subdirectory to tag for"`
 }
 
 var opts Options
@@ -47,6 +49,7 @@ func main() {
 		BuildMetadata:             opts.BuildMetadata,
 		Scheme:                    opts.Scheme,
 		Prefix:                    !opts.NoVersionPrefix,
+		Subdirectory:              opts.Subdirectory,
 	})
 
 	if err != nil {
@@ -55,17 +58,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Tag unless asked otherwise
-	if !opts.JustVersion {
-		err = r.AutoTag()
-		if err != nil {
-			log.SetOutput(os.Stderr)
-			log.Println("Error auto updating version: " + err.Error())
-			os.Exit(1)
-		}
+	if opts.JustVersion {
+		fmt.Println(r.NewVersion())
+		os.Exit(0)
 	}
 
-	fmt.Println(r.LatestVersion())
+	if opts.CurrentVersion {
+		fmt.Println(r.CurrentVersion())
+		os.Exit(0)
+	}
+
+	// Tag unless asked otherwise
+	err = r.AutoTag()
+	if err != nil {
+		log.SetOutput(os.Stderr)
+		log.Println("Error auto updating version: " + err.Error())
+		os.Exit(1)
+	}
 
 	// TODO:(jnelson) Add -major -minor -patch flags for force bumps Fri Sep 11 10:04:20 2015
 	os.Exit(0)

@@ -112,17 +112,24 @@ type GitRepoConfig struct {
 
 	// Prefix prepends literal 'v' to the tag, eg: v1.0.0. Enabled by default
 	Prefix bool
+
+	// Subdirectory provides the subdirectory to tag for
+	Subdirectory string
 }
 
 // GitRepo represents a repository we want to run actions against
 type GitRepo struct {
 	repo *git.Repository
 
+	taggedCommits map[*git.Commit]string
+
 	currentVersion *version.Version
-	currentTag     *git.Commit
+	currentCommit  *git.Commit
+	currentTag     string
 	newVersion     *version.Version
-	branch         string
-	branchID       string // commit id of the branch latest commit (where we will apply the tag)
+
+	branch   string
+	branchID string // commit id of the branch latest commit (where we will apply the tag)
 
 	preReleaseName            string
 	preReleaseTimestampLayout string
@@ -130,7 +137,13 @@ type GitRepo struct {
 
 	scheme string
 
-	prefix bool
+	prefix       bool
+	subdirectory string
+}
+
+type taggedCommit struct {
+	commit *git.Commit
+	tag    string
 }
 
 // NewRepo is a constructor for a repo object, parsing the tags that exist
@@ -190,6 +203,7 @@ func NewRepo(cfg GitRepoConfig) (*GitRepo, error) {
 		buildMetadata:             cfg.BuildMetadata,
 		scheme:                    cfg.Scheme,
 		prefix:                    cfg.Prefix,
+		subdirectory:              cfg.Subdirectory,
 	}
 
 	err = r.parseTags()
@@ -237,15 +251,15 @@ func generateGitDirPath(repoPath string) (string, error) {
 func (r *GitRepo) parseTags() error {
 	log.Println("Parsing repository tags")
 
-	versions := make(map[*version.Version]*git.Commit)
+	versionedCommits := make(map[*version.Version]taggedCommit)
 
 	tags, err := r.repo.Tags()
 	if err != nil {
 		return fmt.Errorf("failed to fetch tags: %s", err.Error())
 	}
 
-	for tag, commit := range tags {
-		v, err := maybeVersionFromTag(commit)
+	for _, tag := range tags {
+		v, err := r.maybeVersionFromTag(tag)
 		if err != nil {
 			log.Println("skipping non version tag: ", tag)
 			continue
@@ -256,36 +270,57 @@ func (r *GitRepo) parseTags() error {
 			continue
 		}
 
-		c, err := r.repo.CommitByRevision(commit)
+		commit, err := r.repo.CommitByRevision(tag)
 		if err != nil {
-			return fmt.Errorf("error reading commit '%s':  %s", commit, err)
+			return fmt.Errorf("error reading commit '%s':  %s", tag, err)
 		}
-		versions[v] = c
+		versionedCommits[v] = taggedCommit{
+			commit: commit,
+			tag:    tag,
+		}
 	}
 
-	keys := make([]*version.Version, 0, len(versions))
-	for key := range versions {
-		keys = append(keys, key)
+	versions := make([]*version.Version, 0, len(versionedCommits))
+	// keep tagged commits to exclude from commit message parsing
+	r.taggedCommits = make(map[*git.Commit]string)
+	for version := range versionedCommits {
+		versions = append(versions, version)
+		versionedCommit := versionedCommits[version]
+		r.taggedCommits[versionedCommit.commit] = versionedCommit.tag
 	}
-	sort.Sort(sort.Reverse(version.Collection(keys)))
+	sort.Sort(sort.Reverse(version.Collection(versions)))
 
 	// loop over the tags and find the last reachable non pre-release tag,
 	// because we want to calculate the tag from v1.2.3 not v1.2.4-pre1.`
-	for _, version := range keys {
-		if len(version.Prerelease()) == 0 {
-			r.currentVersion = version
-			r.currentTag = versions[version]
-			return nil
+	for _, version := range versions {
+		if len(version.Prerelease()) != 0 {
+			log.Printf("skipping pre-release tag version: %s", version.String())
+			continue
 		}
-		log.Printf("skipping pre-release tag version: %s", version.String())
+
+		tag := versionedCommits[version].tag
+		if r.subdirectory != "" && !strings.HasPrefix(tag, fmt.Sprintf("%s/", r.subdirectory)) {
+			log.Println("skipping non subdirectory tag: ", tag)
+			continue
+		}
+
+		r.currentVersion = version
+		r.currentCommit = versionedCommits[version].commit
+		r.currentTag = tag
+		return nil
 	}
 
 	return fmt.Errorf("no stable (non pre-release) version tags found")
 }
 
-func maybeVersionFromTag(tag string) (*version.Version, error) {
+func (r *GitRepo) maybeVersionFromTag(tag string) (*version.Version, error) {
 	if tag == "" {
 		return nil, fmt.Errorf("empty tag not supported")
+	}
+
+	if r.subdirectory != "" {
+		subdirectoryTagParts := strings.Split(tag, "/")
+		tag = subdirectoryTagParts[len(subdirectoryTagParts)-1]
 	}
 
 	ver, vErr := parseVersion(tag)
@@ -311,10 +346,15 @@ func parseVersion(v string) (*version.Version, error) {
 	return nVersion, nil
 }
 
-// LatestVersion Reports the Latest version of the given repo
+// CurrentVersion reports the current version extracted from the given repo
+func (r *GitRepo) CurrentVersion() string {
+	return r.getTagName(*r.currentVersion)
+}
+
+// NewVersion reports the new version calculated of the given repo
 // TODO:(jnelson) this could be more intelligent, looking for a nil new and reporting the latest version found if we refactor autobump at some point Mon Sep 14 13:05:49 2015
-func (r *GitRepo) LatestVersion() string {
-	return r.newVersion.String()
+func (r *GitRepo) NewVersion() string {
+	return r.getTagName(*r.newVersion)
 }
 
 func (r *GitRepo) retrieveBranchInfo() error {
@@ -386,21 +426,30 @@ func (r *GitRepo) calcVersion() error {
 		return err
 	}
 
-	revList := []string{fmt.Sprintf("%s..%s", r.currentTag.ID, startCommit.ID)}
+	revList := []string{fmt.Sprintf("%s..%s", r.currentCommit.ID, startCommit.ID)}
+	log.Printf("loging history from current tag commit: %s, to commit: %s", r.currentCommit.ID, startCommit.ID)
 
-	l, err := r.repo.RevList(revList)
+	commits, err := r.repo.RevList(revList)
 	if err != nil {
 		log.Printf("Error loading history for tag '%s': %s ", r.currentVersion, err.Error())
 	}
 
 	// r.branchID is newest commit; r.currentTag.ID is oldest
-	log.Printf("Checking commits from %s to %s ", r.branchID, r.currentTag.ID)
+	log.Printf("Checking commits from %s to %s ", r.branchID, r.currentCommit.ID)
 
-	// Revlist returns in reverse Crhonological We want chonological. Then check each commit for bump messages
-	for i := len(l) - 1; i >= 0; i-- {
-		commit := l[i] // getting the reverse order element
+	// Revlist returns in reverse chronological, we want chronological
+	// then check each commit for bump messages
+	for i := len(commits) - 1; i >= 0; i-- {
+		commit := commits[i] // getting the reverse order element
 		if commit == nil {
 			return fmt.Errorf("commit pointed to nil object. This should not happen.")
+		}
+
+		if r.subdirectory != "" {
+			if tag, ok := r.taggedCommits[commit]; ok {
+				log.Printf("skip commit %s tagged with %s\n", commit.ID, tag)
+				continue
+			}
 		}
 
 		v, nerr := r.parseCommit(commit)
@@ -442,13 +491,21 @@ func (r *GitRepo) AutoTag() error {
 	return r.tagNewVersion()
 }
 
-func (r *GitRepo) tagNewVersion() error {
+func (r *GitRepo) getTagName(v version.Version) string {
 	// TODO:(jnelson) These should be configurable? Mon Sep 14 12:02:52 2015
-	tagName := fmt.Sprintf("v%s", r.newVersion.String())
+	tagName := fmt.Sprintf("v%s", v.String())
 	if !r.prefix {
-		tagName = r.newVersion.String()
+		tagName = v.String()
 	}
 
+	if r.subdirectory != "" {
+		tagName = fmt.Sprintf("%s/%s", r.subdirectory, tagName)
+	}
+	return tagName
+}
+
+func (r *GitRepo) tagNewVersion() error {
+	tagName := r.getTagName(*r.newVersion)
 	log.Println("Writing Tag", tagName)
 	err := r.repo.CreateTag(tagName, r.branchID)
 	if err != nil {
@@ -543,7 +600,7 @@ func (r *GitRepo) PatchBump() (*version.Version, error) {
 	return patchBumper.bump(r.currentVersion)
 }
 
-// findNamedMatches is a helper functiong for use with regexes containing named capture groups.
+// findNamedMatches is a helper function for use with regexes containing named capture groups.
 // It takes a regex and a string and returns a map with keys corresponding to the named captures
 // in the regex. If there are no matches the map will be empty.
 // https://play.golang.org/p/GR_6YHaEvef

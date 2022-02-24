@@ -88,10 +88,10 @@ archives:
 #     homepage: "https://github.com/pantheon-systems/autotag"
 #     description: "Automatically add version tags to a git repo based on commit messages."
 
-dockers:
-  - dockerfile: Dockerfile
-    image_templates:
-      - "quay.io/pantheon-public/autotag:{{ .Tag }}" # v1.0.0
-      - "quay.io/pantheon-public/autotag:v{{ .Major }}" # v1
-      - "quay.io/pantheon-public/autotag:v{{ .Major }}.{{ .Minor }}" # v1.0
-      - "quay.io/pantheon-public/autotag:latest"
+#dockers:
+#  - dockerfile: Dockerfile
+#    image_templates:
+#      - "quay.io/pantheon-public/autotag:{{ .Tag }}" # v1.0.0
+#      - "quay.io/pantheon-public/autotag:v{{ .Major }}" # v1
+#      - "quay.io/pantheon-public/autotag:v{{ .Major }}.{{ .Minor }}" # v1.0
+#      - "quay.io/pantheon-public/autotag:latest"

@@ -50,29 +50,29 @@ changelog:
 # sign:
 #   artifacts: checksum
 
-archives:
-  # Old release format for backwards compatibility with existing scripts:  Binary named 'Linux'
-  - id: old-format-linux
-    builds: ["linux"]
-    format: binary
-    name_template: "Linux"
-  # Old release format for backwards compatibility with existing scripts:  Binary named 'OSX'
-  - id: old-format-osx
-    builds: ["macos"]
-    format: binary
-    name_template: "OSX"
-  # New release format, binaries for all platforms in the form: `autotag_linux_amd64`
-  - id: new-format-binary-only-all-platforms
-    format: binary
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
-  # archive releases containing: binary, readme, and license. tarballs (macos, linux), zip (windows)
-  - id: archives
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
-    replacements:
-      386: i386
-    format_overrides:
-      - goos: windows
-        format: zip
+#archives:
+#  # Old release format for backwards compatibility with existing scripts:  Binary named 'Linux'
+#  - id: old-format-linux
+#    builds: ["linux"]
+#    format: binary
+#    name_template: "Linux"
+#  # Old release format for backwards compatibility with existing scripts:  Binary named 'OSX'
+#  - id: old-format-osx
+#    builds: ["macos"]
+#    format: binary
+#    name_template: "OSX"
+#  # New release format, binaries for all platforms in the form: `autotag_linux_amd64`
+#  - id: new-format-binary-only-all-platforms
+#    format: binary
+#    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+#  # archive releases containing: binary, readme, and license. tarballs (macos, linux), zip (windows)
+#  - id: archives
+#    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+#    replacements:
+#      386: i386
+#    format_overrides:
+#      - goos: windows
+#        format: zip
 
 # homebrew
 # brews:
@@ -88,10 +88,10 @@ archives:
 #     homepage: "https://github.com/pantheon-systems/autotag"
 #     description: "Automatically add version tags to a git repo based on commit messages."
 
-dockers:
-  - dockerfile: Dockerfile
-    image_templates:
-      - "quay.io/pantheon-public/autotag:{{ .Tag }}" # v1.0.0
-      - "quay.io/pantheon-public/autotag:v{{ .Major }}" # v1
-      - "quay.io/pantheon-public/autotag:v{{ .Major }}.{{ .Minor }}" # v1.0
-      - "quay.io/pantheon-public/autotag:latest"
+#dockers:
+#  - dockerfile: Dockerfile
+#    image_templates:
+#      - "quay.io/pantheon-public/autotag:{{ .Tag }}" # v1.0.0
+#      - "quay.io/pantheon-public/autotag:v{{ .Major }}" # v1
+#      - "quay.io/pantheon-public/autotag:v{{ .Major }}.{{ .Minor }}" # v1.0
+#      - "quay.io/pantheon-public/autotag:latest"

@@ -115,6 +115,9 @@ type GitRepoConfig struct {
 
 	// Subdirectory provides the subdirectory to tag for
 	Subdirectory string
+
+	// SkipNoCommitTag skip version bump when no new commit is found
+	SkipNoCommitTag bool
 }
 
 // GitRepo represents a repository we want to run actions against
@@ -137,8 +140,10 @@ type GitRepo struct {
 
 	scheme string
 
-	prefix       bool
-	subdirectory string
+	prefix bool
+
+	subdirectory    string
+	skipNoCommitTag bool
 }
 
 type taggedCommit struct {
@@ -204,6 +209,7 @@ func NewRepo(cfg GitRepoConfig) (*GitRepo, error) {
 		scheme:                    cfg.Scheme,
 		prefix:                    cfg.Prefix,
 		subdirectory:              cfg.Subdirectory,
+		skipNoCommitTag:           cfg.SkipNoCommitTag,
 	}
 
 	err = r.parseTags()
@@ -452,18 +458,24 @@ func (r *GitRepo) calcVersion() error {
 			}
 		}
 
-		v, nerr := r.parseCommit(commit)
-		if nerr != nil {
-			log.Fatal(nerr)
+		bumper := r.parseCommit(commit)
+		if bumper == nil {
+			bumper = patchBumper
 		}
 
-		if v != nil {
-			r.newVersion = v
+		newVersion, berr := bumper.bump(r.currentVersion)
+		if berr != nil {
+			log.Fatal(berr)
+		}
+
+		if newVersion != nil {
+			r.newVersion = newVersion
 		}
 	}
 
 	// if there is no movement on the version from commits, bump patch
-	if r.newVersion == r.currentVersion {
+	if r.newVersion == r.currentVersion && !r.skipNoCommitTag {
+		log.Printf("apply patch bumper by default\n")
 		if r.newVersion, err = patchBumper.bump(r.currentVersion); err != nil {
 			return err
 		}
@@ -505,6 +517,9 @@ func (r *GitRepo) getTagName(v version.Version) string {
 }
 
 func (r *GitRepo) tagNewVersion() error {
+	if r.currentVersion == r.newVersion {
+		return nil
+	}
 	tagName := r.getTagName(*r.newVersion)
 	log.Println("Writing Tag", tagName)
 	err := r.repo.CreateTag(tagName, r.branchID)
@@ -515,7 +530,7 @@ func (r *GitRepo) tagNewVersion() error {
 }
 
 // parseCommit looks at HEAD commit see if we want to increment major/minor/patch
-func (r *GitRepo) parseCommit(commit *git.Commit) (*version.Version, error) {
+func (r *GitRepo) parseCommit(commit *git.Commit) bumper {
 	var b bumper
 	msg := commit.Message
 	log.Printf("Parsing %s: %s\n", commit.ID, msg)
@@ -527,12 +542,7 @@ func (r *GitRepo) parseCommit(commit *git.Commit) (*version.Version, error) {
 		b = parseAutotagCommit(msg)
 	}
 
-	// fallback to patch bump if no matches from the scheme parsers
-	if b != nil {
-		return b.bump(r.currentVersion)
-	}
-
-	return nil, nil
+	return b
 }
 
 // parseAutotagCommit implements the autotag (default) commit scheme.

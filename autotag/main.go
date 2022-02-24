@@ -23,6 +23,7 @@ type Options struct {
 	Scheme              string `short:"s" long:"scheme" description:"The commit message scheme to use (can be: autotag|conventional)" default:"autotag"`
 	NoVersionPrefix     bool   `short:"e" long:"empty-version-prefix" description:"Do not prepend v to version tag"`
 	Subdirectory        string `short:"d" long:"subdirectory" description:"Provide subdirectory to tag for"`
+	SkipNoCommitTag     bool   `long:"skip-no-commit-tag" description:"Skip tag when no new commits"`
 }
 
 var opts Options
@@ -50,6 +51,7 @@ func main() {
 		Scheme:                    opts.Scheme,
 		Prefix:                    !opts.NoVersionPrefix,
 		Subdirectory:              opts.Subdirectory,
+		SkipNoCommitTag:           opts.SkipNoCommitTag,
 	})
 
 	if err != nil {

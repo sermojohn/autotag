@@ -421,13 +421,13 @@ func (r *GitRepo) calcVersion() error {
 		return err
 	}
 
-	startCommit, err := r.repo.BranchCommit(r.branch)
+	lastBranchCommit, err := r.repo.BranchCommit(r.branch)
 	if err != nil {
 		return err
 	}
 
-	revList := []string{fmt.Sprintf("%s..%s", r.currentCommit.ID, startCommit.ID)}
-	log.Printf("loging history from current tag commit: %s, to commit: %s", r.currentCommit.ID, startCommit.ID)
+	revList := []string{fmt.Sprintf("%s..%s", r.currentCommit.ID, lastBranchCommit.ID)}
+	log.Printf("loging history from current tag commit: %s, to commit: %s", r.currentCommit.ID, lastBranchCommit.ID)
 
 	commits, err := r.repo.RevList(revList)
 	if err != nil {
